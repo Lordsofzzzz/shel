@@ -9,52 +9,19 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            ext: ""
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            ext: ""
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            ext: ""
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            ext: ".exe"
-
-    runs-on: ${{ matrix.os }}
+  release:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          target: ${{ matrix.target }}
 
-      - run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo build --release
 
-      - name: Package
-        shell: bash
-        run: |
-          cd "target/${{ matrix.target }}/release"
-          tar czf "shel-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" "shel${{ matrix.ext }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: shel-${{ matrix.target }}
-          path: "target/${{ matrix.target }}/release/shel-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
       - run: |
-          find . -name "*.tar.gz" -exec echo {} \;
+          cd target/release
+          tar czf "shel-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz" shel
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: shel-*/*.tar.gz
+          files: target/release/shel-*.tar.gz
           generate_release_notes: true
