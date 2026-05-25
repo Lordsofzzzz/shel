@@ -1,10 +1,7 @@
-mod db;
-mod models;
-mod tui;
-
 use anyhow::Result;
 use chrono::{DateTime, Local, TimeZone};
 use clap::{Parser, Subcommand};
+use hx::{db, models, tui};
 use models::Entry;
 use uuid::Uuid;
 
@@ -17,30 +14,36 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Record a command into history
     Record {
         command: String,
         #[arg(long)] exit_code:   Option<i64>,
         #[arg(long)] duration_ms: Option<i64>,
         #[arg(long)] session_id:  Option<String>,
     },
-    /// Search history (plain output)
     Search {
         query: Option<String>,
         #[arg(short, long, default_value = "50")] limit: usize,
         #[arg(long)] json: bool,
     },
-    /// Interactive TUI search (Ctrl+R mode)
     Ui {
         query: Option<String>,
     },
-    /// Print shell integration hook
     Init {
         shell: String,
     },
 }
 
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_target(true)
+        .compact()
+        .init();
+}
+
 fn main() -> Result<()> {
+    init_tracing();
     let cli = Cli::parse();
     let conn = db::open()?;
 
@@ -61,11 +64,15 @@ fn main() -> Result<()> {
                 timestamp:   chrono::Utc::now().timestamp_millis(),
             };
             db::insert(&conn, &entry)?;
+            tracing::info!(command = %entry.command, "recorded command");
         }
 
         Cmd::Search { query, limit, json } => {
             let entries = match query.as_deref() {
-                Some(q) if !q.is_empty() => db::search(&conn, q, limit)?,
+                Some(q) if !q.is_empty() => {
+                    tracing::debug!(query = %q, "searching history");
+                    db::search(&conn, q, limit)?
+                }
                 _ => db::list(&conn, limit)?,
             };
             if json {

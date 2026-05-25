@@ -2,6 +2,7 @@ use anyhow::Result;
 use rusqlite::{Connection, params};
 use crate::models::Entry;
 
+/// Open or create the SQLite history database, applying migrations.
 pub fn open() -> Result<Connection> {
     let path = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -13,7 +14,8 @@ pub fn open() -> Result<Connection> {
     Ok(conn)
 }
 
-pub(crate) fn migrate(conn: &Connection) -> Result<()> {
+/// Run database schema migrations (idempotent).
+pub fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch("
         CREATE TABLE IF NOT EXISTS history (
             id          TEXT PRIMARY KEY,
@@ -31,6 +33,7 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Insert an entry into the history table. Silently ignores duplicates.
 pub fn insert(conn: &Connection, e: &Entry) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO history
@@ -42,12 +45,18 @@ pub fn insert(conn: &Connection, e: &Entry) -> Result<()> {
     Ok(())
 }
 
+/// Search history for commands matching `query` (substring match), ordered by
+/// most recent first. `%` and `_` in the query are treated as literal characters.
 pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Entry>> {
-    let pattern = format!("%{}%", query);
+    let escaped = query
+        .replace('!', "!!")
+        .replace('%', "!%")
+        .replace('_', "!_");
+    let pattern = format!("%{}%", escaped);
     let mut stmt = conn.prepare(
         "SELECT id,command,cwd,exit_code,duration_ms,session_id,hostname,timestamp
          FROM history
-         WHERE command LIKE ?1
+         WHERE command LIKE ?1 ESCAPE '!'
          ORDER BY timestamp DESC
          LIMIT ?2",
     )?;
@@ -55,6 +64,7 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Entry>
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
+/// List the most recent history entries, ordered by timestamp descending.
 pub fn list(conn: &Connection, limit: usize) -> Result<Vec<Entry>> {
     let mut stmt = conn.prepare(
         "SELECT id,command,cwd,exit_code,duration_ms,session_id,hostname,timestamp
@@ -199,5 +209,38 @@ mod tests {
         assert_eq!(entries[0].id, "b");
         assert_eq!(entries[1].id, "c");
         assert_eq!(entries[2].id, "a");
+    }
+
+    #[test]
+    fn test_search_literal_percent() {
+        let conn = test_conn();
+        insert(&conn, &sample_entry("a", "find . -name '%.rs'", 100)).unwrap();
+        insert(&conn, &sample_entry("b", "npm install",         200)).unwrap();
+
+        let entries = search(&conn, "%.rs", 10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "a");
+    }
+
+    #[test]
+    fn test_search_literal_underscore() {
+        let conn = test_conn();
+        insert(&conn, &sample_entry("a", "git checkout _main", 100)).unwrap();
+        insert(&conn, &sample_entry("b", "git checkout main",  200)).unwrap();
+
+        let entries = search(&conn, "_main", 10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "a");
+    }
+
+    #[test]
+    fn test_search_literal_exclamation() {
+        let conn = test_conn();
+        insert(&conn, &sample_entry("a", "echo 'hello!'", 100)).unwrap();
+        insert(&conn, &sample_entry("b", "echo 'hello'",  200)).unwrap();
+
+        let entries = search(&conn, "hello!", 10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "a");
     }
 }

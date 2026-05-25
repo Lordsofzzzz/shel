@@ -8,15 +8,16 @@ name = "hx"
 path = "src/main.rs"
 
 [dependencies]
-rusqlite     = { version = "0.31", features = ["bundled"] }
-clap         = { version = "=4.4.18", features = ["derive"] }
-clap_builder = "=4.4.18"
-uuid         = { version = "=1.6.1", features = ["v4"] }
-chrono       = "0.4"
-anyhow       = "1"
-dirs         = "5"
-serde        = { version = "1", features = ["derive"] }
-serde_json   = "1"
-hostname     = "0.3"
-ratatui      = "0.26"
-crossterm    = { version = "0.27", features = ["event-stream"] }
+rusqlite       = { version = "0.31", features = ["bundled"] }
+clap           = { version = "4.4", features = ["derive"] }
+uuid           = { version = "1.6", features = ["v4"] }
+chrono         = "0.4"
+anyhow         = "1"
+dirs           = "5"
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+hostname       = "0.3"
+ratatui        = "0.26"
+crossterm      = { version = "0.27", features = ["event-stream"] }
+tracing        = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

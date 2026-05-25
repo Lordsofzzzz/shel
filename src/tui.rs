@@ -77,11 +77,12 @@ impl App {
     }
 }
 
+/// Run the interactive TUI overlay. Returns the selected command if the user
+/// confirmed a choice, or `None` if they cancelled.
 pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<String>> {
     let entries = db::list(conn, 10000)?;
     let mut app = App::new(entries, initial_query.unwrap_or(""));
 
-    // Enable raw mode BEFORE emitting escapes — prevents them leaking to display
     enable_raw_mode()?;
 
     let mut stdout = io::stdout();
@@ -135,7 +136,6 @@ pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<Stri
 
     disable_raw_mode()?;
     terminal.clear()?;
-    // Drain any CPR responses (^[[row;colR) that arrived from ratatui's cursor query
     while crossterm::event::poll(std::time::Duration::from_millis(10))? {
         let _ = crossterm::event::read();
     }

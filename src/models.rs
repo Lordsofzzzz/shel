@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+/// A single shell history entry.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Entry {
     pub id:          String,
@@ -9,7 +10,8 @@ pub struct Entry {
     pub duration_ms: Option<i64>,
     pub session_id:  Option<String>,
     pub hostname:    Option<String>,
-    pub timestamp:   i64,  // Unix ms
+    /// Unix timestamp in milliseconds.
+    pub timestamp:   i64,
 }
 
 #[cfg(test)]
