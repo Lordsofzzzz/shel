@@ -1,12 +1,12 @@
 use anyhow::Result;
 use chrono::{DateTime, Local, TimeZone};
 use clap::{Parser, Subcommand};
-use hx::{db, models, tui};
+use shel::{db, models, tui};
 use models::Entry;
 use uuid::Uuid;
 
 #[derive(Parser)]
-#[command(name = "hx", about = "Shell history manager")]
+#[command(name = "shel", about = "Shell history manager")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -120,72 +120,72 @@ fn print_hook(shell: &str) {
 }
 
 const BASH_HOOK: &str = r#"
-# hx bash hook — add to ~/.bashrc
-__hx_session_id=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)
-__hx_start_time=
+# shel bash hook — add to ~/.bashrc
+__shel_session_id=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)
+__shel_start_time=
 
-__hx_preexec() {
-    __hx_start_time=$(date +%s%3N)
+__shel_preexec() {
+    __shel_start_time=$(date +%s%3N)
 }
 
-__hx_precmd() {
+__shel_precmd() {
     local exit_code=$?
     local cmd
     cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
     [[ -z "$cmd" ]] && return
     local duration_ms=0
-    if [[ -n "$__hx_start_time" ]]; then
-        duration_ms=$(( $(date +%s%3N) - __hx_start_time ))
+    if [[ -n "$__shel_start_time" ]]; then
+        duration_ms=$(( $(date +%s%3N) - __shel_start_time ))
     fi
-    (hx record "$cmd" \
+    (shel record "$cmd" \
         --exit-code "$exit_code" \
         --duration-ms "$duration_ms" \
-        --session-id "$__hx_session_id" &) >/dev/null 2>&1
-    __hx_start_time=
+        --session-id "$__shel_session_id" &) >/dev/null 2>&1
+    __shel_start_time=
 }
 
-__hx_ctrl_r() {
+__shel_ctrl_r() {
     local selected
-    selected=$(hx ui "$READLINE_LINE" 3>&1 1>&2 2>&3)
+    selected=$(shel ui "$READLINE_LINE" 3>&1 1>&2 2>&3)
     if [[ -n "$selected" ]]; then
         READLINE_LINE="$selected"
         READLINE_POINT=${#READLINE_LINE}
     fi
 }
 
-trap '__hx_preexec' DEBUG
-PROMPT_COMMAND="__hx_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-bind -x '"\C-r": __hx_ctrl_r'
+trap '__shel_preexec' DEBUG
+PROMPT_COMMAND="__shel_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+bind -x '"\C-r": __shel_ctrl_r'
 "#;
 
 const ZSH_HOOK: &str = r#"
-# hx zsh hook — add to ~/.zshrc
-__hx_session_id=$(uuidgen 2>/dev/null || date +%s)
-__hx_start_time=
+# shel zsh hook — add to ~/.zshrc
+__shel_session_id=$(uuidgen 2>/dev/null || date +%s)
+__shel_start_time=
 
-__hx_preexec() {
-    __hx_start_time=${EPOCHREALTIME-$(date +%s%3N)}
+__shel_preexec() {
+    __shel_start_time=${EPOCHREALTIME-$(date +%s%3N)}
 }
 
-__hx_precmd() {
+__shel_precmd() {
     local exit_code=$?
     local cmd=$history[$HISTCMD]
     [[ -z "$cmd" ]] && return
     local duration_ms=0
-    if [[ -n "$__hx_start_time" ]]; then
-        duration_ms=$(( $(date +%s%3N) - ${__hx_start_time%%.*}000 ))
+    if [[ -n "$__shel_start_time" ]]; then
+        duration_ms=$(( $(date +%s%3N) - ${__shel_start_time%%.*}000 ))
     fi
-    (hx record "$cmd" \
+    (shel record "$cmd" \
         --exit-code "$exit_code" \
         --duration-ms "$duration_ms" \
-        --session-id "$__hx_session_id" &) >/dev/null 2>&1
-    __hx_start_time=
+        --session-id "$__shel_session_id" &) >/dev/null 2>&1
+    __shel_start_time=
 }
 
-__hx_ctrl_r() {
+__shel_ctrl_r() {
     zle -I
     local selected
-    selected=$(hx ui "$BUFFER" 3>&1 1>&2 2>&3)
+    selected=$(shel ui "$BUFFER" 3>&1 1>&2 2>&3)
     zle reset-prompt
     [[ -z "$selected" ]] && return
     BUFFER="$selected"
@@ -193,44 +193,44 @@ __hx_ctrl_r() {
 }
 
 autoload -Uz add-zsh-hook
-add-zsh-hook preexec __hx_preexec
-add-zsh-hook precmd __hx_precmd
-zle -N __hx_ctrl_r
-bindkey '^R' __hx_ctrl_r
+add-zsh-hook preexec __shel_preexec
+add-zsh-hook precmd __shel_precmd
+zle -N __shel_ctrl_r
+bindkey '^R' __shel_ctrl_r
 "#;
 
 const FISH_HOOK: &str = r#"
-# hx fish hook — save to ~/.config/fish/conf.d/hx.fish
-set -g __hx_session_id (uuidgen 2>/dev/null; or date +%s)
-set -g __hx_start_time 0
+# shel fish hook — save to ~/.config/fish/conf.d/hx.fish
+set -g __shel_session_id (uuidgen 2>/dev/null; or date +%s)
+set -g __shel_start_time 0
 
-function __hx_on_event --on-event fish_preexec
-    set __hx_start_time (date +%s%3N)
+function __shel_on_event --on-event fish_preexec
+    set __shel_start_time (date +%s%3N)
 end
 
-function __hx_on_postexec --on-event fish_postexec
+function __shel_on_postexec --on-event fish_postexec
     set -l exit_code $status
     set -l cmd $argv[1]
     set -l duration_ms 0
-    if test $__hx_start_time -gt 0
-        set duration_ms (math (date +%s%3N) - $__hx_start_time)
+    if test $__shel_start_time -gt 0
+        set duration_ms (math (date +%s%3N) - $__shel_start_time)
     end
-    hx record "$cmd" \
+    shel record "$cmd" \
         --exit-code $exit_code \
         --duration-ms $duration_ms \
-        --session-id $__hx_session_id &>/dev/null &
-    set __hx_start_time 0
+        --session-id $__shel_session_id &>/dev/null &
+    set __shel_start_time 0
 end
 
-function __hx_ctrl_r
-    set -l selected (hx ui (commandline) 2>/dev/null)
+function __shel_ctrl_r
+    set -l selected (shel ui (commandline) 2>/dev/null)
     if test -n "$selected"
         commandline -- $selected
     end
     commandline -f repaint
 end
 
-bind \cr __hx_ctrl_r
+bind \cr __shel_ctrl_r
 "#;
 
 #[cfg(test)]
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn test_print_hook_bash() {
         assert!(!BASH_HOOK.is_empty());
-        assert!(BASH_HOOK.contains("__hx_ctrl_r"));
+        assert!(BASH_HOOK.contains("__shel_ctrl_r"));
     }
 
     #[test]
@@ -289,9 +289,9 @@ mod tests {
 
     #[test]
     fn test_hook_constants_contain_key_elements() {
-        assert!(BASH_HOOK.contains("hx record"));
-        assert!(ZSH_HOOK.contains("hx record"));
-        assert!(FISH_HOOK.contains("hx record"));
+        assert!(BASH_HOOK.contains("shel record"));
+        assert!(ZSH_HOOK.contains("shel record"));
+        assert!(FISH_HOOK.contains("shel record"));
 
         assert!(BASH_HOOK.contains("bind -x"));
         assert!(ZSH_HOOK.contains("bindkey"));
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_bash_hook_uses_subshell() {
-        assert!(BASH_HOOK.contains("(hx record"));
+        assert!(BASH_HOOK.contains("(shel record"));
         assert!(BASH_HOOK.contains("&) >/dev/null 2>&1"));
     }
 

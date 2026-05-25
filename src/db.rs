@@ -6,7 +6,7 @@ use crate::models::Entry;
 pub fn open() -> Result<Connection> {
     let path = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("hx")
+        .join("shel")
         .join("history.db");
     std::fs::create_dir_all(path.parent().unwrap())?;
     let conn = Connection::open(&path)?;

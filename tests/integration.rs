@@ -1,5 +1,5 @@
-use hx::db;
-use hx::models::Entry;
+use shel::db;
+use shel::models::Entry;
 use rusqlite::Connection;
 
 fn test_db() -> Connection {
