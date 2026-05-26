@@ -1,20 +1,13 @@
 use anyhow::Result;
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
-    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph},
-    Terminal, TerminalOptions, Viewport,
+    TerminalOptions, Viewport,
 };
 use rusqlite::Connection;
-use std::io::{self, Write};
 
 use crate::db;
 use crate::models::Entry;
@@ -33,12 +26,12 @@ struct App {
 impl App {
     fn new(entries: Vec<Entry>, initial_query: &str) -> Self {
         let mut app = App {
-            query: initial_query.to_string(),
+            query:      initial_query.to_string(),
             entries,
-            filtered: vec![],
+            filtered:   vec![],
             list_state: ListState::default(),
-            selected: None,
-            done: false,
+            selected:   None,
+            done:       false,
         };
         app.filter();
         app
@@ -79,95 +72,121 @@ impl App {
 
 /// Run the interactive TUI overlay. Returns the selected command if the user
 /// confirmed a choice, or `None` if they cancelled.
+///
+/// Uses `ratatui::init_with_options` which installs a panic hook that restores
+/// the terminal before printing the panic message — prevents a bricked terminal
+/// if anything inside the event loop panics.
 pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<String>> {
-    let entries = db::list(conn, 10000)?;
+    // Load all history — no artificial cap.
+    let entries = db::list_all(conn)?;
     let mut app = App::new(entries, initial_query.unwrap_or(""));
 
-    enable_raw_mode()?;
+    // init_with_options: enables raw mode + installs panic hook for safe restore.
+    let mut terminal = ratatui::init_with_options(TerminalOptions {
+        viewport: Viewport::Inline(POPUP_HEIGHT),
+    });
 
-    let mut stdout = io::stdout();
-    for _ in 0..POPUP_HEIGHT {
-        writeln!(stdout)?;
-    }
-    execute!(stdout, cursor::MoveUp(POPUP_HEIGHT))?;
-    stdout.flush()?;
+    let result = run_loop(&mut terminal, &mut app);
 
-    let backend = CrosstermBackend::new(io::stdout());
-    let mut terminal = Terminal::with_options(
-        backend,
-        TerminalOptions { viewport: Viewport::Inline(POPUP_HEIGHT) },
-    )?;
+    // restore: disables raw mode; prints errors to stderr instead of propagating
+    // so cleanup always runs regardless of prior errors.
+    ratatui::restore();
 
+    result
+}
+
+fn run_loop(
+    terminal: &mut ratatui::DefaultTerminal,
+    app: &mut App,
+) -> Result<Option<String>> {
     loop {
-        terminal.draw(|f| render(f, &mut app))?;
-        if app.done { break; }
+        // try_draw propagates render errors instead of panicking.
+        terminal.try_draw(|f| render(f, app))?;
+
+        if app.done {
+            break;
+        }
 
         if let Event::Key(key) = event::read()? {
             match (key.modifiers, key.code) {
                 (_, KeyCode::Esc)
                 | (KeyModifiers::CONTROL, KeyCode::Char('c'))
-                | (KeyModifiers::CONTROL, KeyCode::Char('g')) => { app.done = true; break; }
+                | (KeyModifiers::CONTROL, KeyCode::Char('g')) => {
+                    app.done = true;
+                    break;
+                }
 
-                (_, KeyCode::Enter)  => app.confirm(),
+                (_, KeyCode::Enter) => app.confirm(),
 
                 (_, KeyCode::Up)
                 | (KeyModifiers::CONTROL, KeyCode::Char('p')) => app.up(),
+
                 (_, KeyCode::Down)
                 | (KeyModifiers::CONTROL, KeyCode::Char('n'))
-                | (_, KeyCode::Tab)  => app.down(),
+                | (_, KeyCode::Tab) => app.down(),
+
                 (_, KeyCode::BackTab) => app.up(),
 
                 (_, KeyCode::Backspace) => { app.query.pop(); app.filter(); }
-                (KeyModifiers::CONTROL, KeyCode::Char('u')) => { app.query.clear(); app.filter(); }
+
+                (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+                    app.query.clear();
+                    app.filter();
+                }
+
                 (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
                     let t = app.query.trim_end();
                     let end = t.rfind(' ').map(|i| i + 1).unwrap_or(0);
                     app.query.truncate(end);
                     app.filter();
                 }
+
                 (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                     app.query.push(c);
                     app.filter();
                 }
+
                 _ => {}
             }
         }
     }
 
-    disable_raw_mode()?;
-    terminal.clear()?;
-    while crossterm::event::poll(std::time::Duration::from_millis(10))? {
-        let _ = crossterm::event::read();
-    }
-    Ok(app.selected)
+    Ok(app.selected.take())
 }
 
 fn fmt_dur(ms: i64) -> String {
-    if ms < 1000        { format!("{ms}ms") }
-    else if ms < 60_000 { format!("{:.1}s", ms as f64 / 1000.0) }
-    else                { format!("{:.0}m", ms as f64 / 60_000.0) }
+    if ms < 1_000        { format!("{ms}ms") }
+    else if ms < 60_000  { format!("{:.1}s", ms as f64 / 1_000.0) }
+    else                 { format!("{:.0}m", ms as f64 / 60_000.0) }
 }
 
-fn render(f: &mut ratatui::Frame, app: &mut App) {
-    let area = f.size();
+fn render(f: &mut ratatui::Frame, app: &mut App) -> std::io::Result<()> {
+    // f.area() — f.size() is deprecated since ratatui 0.26.
+    let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(2), Constraint::Min(0)])
         .split(area);
 
     let count = app.filtered.len();
-    let search = Paragraph::new(vec![
+    let search_widget = Paragraph::new(vec![
         Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(format!("{count} results"), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{count} results"),
+                Style::default().fg(Color::DarkGray),
+            ),
         ]),
         Line::from(vec![
-            Span::styled("  > ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  > ",
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ),
             Span::raw(app.query.clone()),
             Span::styled("▌", Style::default().fg(Color::Cyan)),
         ]),
     ]);
-    f.render_widget(search, chunks[0]);
+    f.render_widget(search_widget, chunks[0]);
 
     let selected_idx = app.list_state.selected();
 
@@ -210,6 +229,8 @@ fn render(f: &mut ratatui::Frame, app: &mut App) {
     let list = List::new(items);
     let mut state = app.list_state.clone();
     f.render_stateful_widget(list, chunks[1], &mut state);
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -218,14 +239,14 @@ mod tests {
 
     fn make_entry(id: &str, cmd: &str, ts: i64) -> Entry {
         Entry {
-            id: id.into(),
-            command: cmd.into(),
-            cwd: None,
-            exit_code: Some(0),
+            id:          id.into(),
+            command:     cmd.into(),
+            cwd:         None,
+            exit_code:   Some(0),
             duration_ms: None,
-            session_id: None,
-            hostname: None,
-            timestamp: ts,
+            session_id:  None,
+            hostname:    None,
+            timestamp:   ts,
         }
     }
 
@@ -248,9 +269,9 @@ mod tests {
     #[test]
     fn test_filter_basic() {
         let entries = vec![
-            make_entry("a", "git push",   1),
+            make_entry("a", "git push",    1),
             make_entry("b", "cargo build", 2),
-            make_entry("c", "git log",    3),
+            make_entry("c", "git log",     3),
         ];
         let mut app = App::new(entries, "");
         app.query = "git".into();
@@ -283,7 +304,7 @@ mod tests {
     #[test]
     fn test_filter_empty_query_shows_all() {
         let entries = vec![
-            make_entry("a", "git push",   1),
+            make_entry("a", "git push",    1),
             make_entry("b", "cargo build", 2),
         ];
         let mut app = App::new(entries, "");
@@ -325,6 +346,7 @@ mod tests {
         let mut app = App::new(vec![], "");
         app.up();
         app.down();
+        // no panic — that's the assertion
     }
 
     #[test]
@@ -351,9 +373,9 @@ mod tests {
     #[test]
     fn test_confirm_with_filtered_list() {
         let entries = vec![
-            make_entry("a", "git push",   1),
+            make_entry("a", "git push",    1),
             make_entry("b", "npm install", 2),
-            make_entry("c", "git log",    3),
+            make_entry("c", "git log",     3),
         ];
         let mut app = App::new(entries, "");
         app.query = "npm".into();
@@ -364,22 +386,22 @@ mod tests {
 
     #[test]
     fn test_fmt_dur_ms() {
-        assert_eq!(fmt_dur(0), "0ms");
-        assert_eq!(fmt_dur(42), "42ms");
+        assert_eq!(fmt_dur(0),   "0ms");
+        assert_eq!(fmt_dur(42),  "42ms");
         assert_eq!(fmt_dur(999), "999ms");
     }
 
     #[test]
     fn test_fmt_dur_seconds() {
-        assert_eq!(fmt_dur(1000), "1.0s");
-        assert_eq!(fmt_dur(1500), "1.5s");
+        assert_eq!(fmt_dur(1_000),  "1.0s");
+        assert_eq!(fmt_dur(1_500),  "1.5s");
         assert_eq!(fmt_dur(59_999), "60.0s");
     }
 
     #[test]
     fn test_fmt_dur_minutes() {
-        assert_eq!(fmt_dur(60_000), "1m");
-        assert_eq!(fmt_dur(120_000), "2m");
+        assert_eq!(fmt_dur(60_000),    "1m");
+        assert_eq!(fmt_dur(120_000),   "2m");
         assert_eq!(fmt_dur(3_600_000), "60m");
     }
 }

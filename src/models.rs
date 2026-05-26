@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A single shell history entry.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     pub id:          String,
     pub command:     String,
@@ -10,7 +10,7 @@ pub struct Entry {
     pub duration_ms: Option<i64>,
     pub session_id:  Option<String>,
     pub hostname:    Option<String>,
-    /// Unix timestamp in milliseconds.
+    /// Unix timestamp in milliseconds (UTC).
     pub timestamp:   i64,
 }
 
@@ -38,6 +38,23 @@ mod tests {
         assert_eq!(e.session_id.as_deref(), Some("s1"));
         assert_eq!(e.hostname.as_deref(), Some("host"));
         assert_eq!(e.timestamp, 1_000_000);
+    }
+
+    #[test]
+    fn test_entry_clone() {
+        let e = Entry {
+            id:          "x".into(),
+            command:     "ls".into(),
+            cwd:         None,
+            exit_code:   Some(0),
+            duration_ms: None,
+            session_id:  None,
+            hostname:    None,
+            timestamp:   0,
+        };
+        let c = e.clone();
+        assert_eq!(c.id, e.id);
+        assert_eq!(c.command, e.command);
     }
 
     #[test]
@@ -80,5 +97,21 @@ mod tests {
         let de: Entry = serde_json::from_str(&json).unwrap();
         assert_eq!(de.id, "");
         assert_eq!(de.timestamp, 0);
+    }
+
+    #[test]
+    fn test_entry_failed_exit_code() {
+        let e = Entry {
+            id:          "f1".into(),
+            command:     "cargo test".into(),
+            cwd:         None,
+            exit_code:   Some(101),
+            duration_ms: Some(5_000),
+            session_id:  None,
+            hostname:    None,
+            timestamp:   999,
+        };
+        assert_eq!(e.exit_code, Some(101));
+        assert!(e.exit_code.map(|c| c != 0).unwrap_or(false));
     }
 }

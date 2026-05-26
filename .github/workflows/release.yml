@@ -9,19 +9,70 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  release-linux:
+    name: Release (Linux x86_64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - run: cargo build --release
+      - uses: Swatinem/rust-cache@v2
 
-      - run: |
-          cd target/release
-          tar czf "shel-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz" shel
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
 
-      - uses: softprops/action-gh-release@v2
+      - name: Install packaging tools
+        run: |
+          cargo binstall --no-confirm cargo-deb
+          cargo binstall --no-confirm cargo-generate-rpm
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package .deb
+        run: cargo deb
+
+      - name: Package .rpm
+        run: cargo generate-rpm
+
+      - name: Upload artifacts
+        uses: softprops/action-gh-release@v2
         with:
-          files: target/release/shel-*.tar.gz
+          files: |
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+          generate_release_notes: true
+
+  release-macos:
+    name: Release (macOS ${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package tarball
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf "shel-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" shel
+
+      - name: Upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/${{ matrix.target }}/release/shel-*.tar.gz
           generate_release_notes: true
