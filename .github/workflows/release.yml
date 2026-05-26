@@ -64,11 +64,9 @@ jobs:
           path: dist/
 
       - name: Checksums
-        run: |
-          cd dist
-          sha256sum * > sha256sums.txt
+        run: find dist -type f | sort | xargs sha256sum > dist/sha256sums.txt
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: dist/**/*
           generate_release_notes: true
