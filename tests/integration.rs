@@ -1,6 +1,6 @@
+use rusqlite::Connection;
 use shel::db;
 use shel::models::Entry;
-use rusqlite::Connection;
 
 fn test_db() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
@@ -10,21 +10,21 @@ fn test_db() -> Connection {
 
 fn entry(id: &str, cmd: &str, ts: i64) -> Entry {
     Entry {
-        id:          id.into(),
-        command:     cmd.into(),
-        cwd:         Some("/home/user".into()),
-        exit_code:   Some(0),
+        id: id.into(),
+        command: cmd.into(),
+        cwd: Some("/home/user".into()),
+        exit_code: Some(0),
         duration_ms: None,
-        session_id:  None,
-        hostname:    None,
-        timestamp:   ts,
+        session_id: None,
+        hostname: None,
+        timestamp: ts,
     }
 }
 
 #[test]
 fn test_insert_and_search_roundtrip() {
     let conn = test_db();
-    db::insert(&conn, &entry("a", "git push",    100)).unwrap();
+    db::insert(&conn, &entry("a", "git push", 100)).unwrap();
     db::insert(&conn, &entry("b", "cargo build", 200)).unwrap();
 
     let results = db::search(&conn, "git", 10).unwrap();
@@ -35,7 +35,7 @@ fn test_insert_and_search_roundtrip() {
 #[test]
 fn test_insert_and_list_roundtrip() {
     let conn = test_db();
-    db::insert(&conn, &entry("a", "git push",    100)).unwrap();
+    db::insert(&conn, &entry("a", "git push", 100)).unwrap();
     db::insert(&conn, &entry("b", "cargo build", 200)).unwrap();
 
     let results = db::list(&conn, 10).unwrap();
@@ -59,7 +59,7 @@ fn test_list_all_no_cap() {
 fn test_search_special_chars_are_literal() {
     let conn = test_db();
     db::insert(&conn, &entry("a", "find . -name '%.rs'", 100)).unwrap();
-    db::insert(&conn, &entry("b", "git checkout _main",  200)).unwrap();
+    db::insert(&conn, &entry("b", "git checkout _main", 200)).unwrap();
 
     let r1 = db::search(&conn, "%.rs", 10).unwrap();
     assert_eq!(r1.len(), 1, "% should not act as LIKE wildcard");
@@ -78,10 +78,10 @@ fn test_search_pagination() {
         db::insert(&conn, &entry(&id, "cmd", i)).unwrap();
     }
 
-    let all     = db::list(&conn, 100).unwrap();
+    let all = db::list(&conn, 100).unwrap();
     let limited = db::list(&conn, 3).unwrap();
-    assert_eq!(all.len(),     10);
-    assert_eq!(limited.len(),  3);
+    assert_eq!(all.len(), 10);
+    assert_eq!(limited.len(), 3);
 }
 
 #[test]
@@ -106,8 +106,8 @@ fn test_duplicate_insert_idempotent() {
 #[test]
 fn test_search_ordering() {
     let conn = test_db();
-    db::insert(&conn, &entry("a", "git push",    100)).unwrap();
-    db::insert(&conn, &entry("b", "git commit",  300)).unwrap();
+    db::insert(&conn, &entry("a", "git push", 100)).unwrap();
+    db::insert(&conn, &entry("b", "git commit", 300)).unwrap();
     db::insert(&conn, &entry("c", "npm install", 200)).unwrap();
 
     let results = db::search(&conn, "git", 10).unwrap();

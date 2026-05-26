@@ -3,15 +3,15 @@ use serde::{Deserialize, Serialize};
 /// A single shell history entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
-    pub id:          String,
-    pub command:     String,
-    pub cwd:         Option<String>,
-    pub exit_code:   Option<i64>,
+    pub id: String,
+    pub command: String,
+    pub cwd: Option<String>,
+    pub exit_code: Option<i64>,
     pub duration_ms: Option<i64>,
-    pub session_id:  Option<String>,
-    pub hostname:    Option<String>,
+    pub session_id: Option<String>,
+    pub hostname: Option<String>,
     /// Unix timestamp in milliseconds (UTC).
-    pub timestamp:   i64,
+    pub timestamp: i64,
 }
 
 #[cfg(test)]
@@ -21,14 +21,14 @@ mod tests {
     #[test]
     fn test_entry_creation() {
         let e = Entry {
-            id:          "abc".into(),
-            command:     "git push".into(),
-            cwd:         Some("/home/user".into()),
-            exit_code:   Some(0),
+            id: "abc".into(),
+            command: "git push".into(),
+            cwd: Some("/home/user".into()),
+            exit_code: Some(0),
             duration_ms: Some(300),
-            session_id:  Some("s1".into()),
-            hostname:    Some("host".into()),
-            timestamp:   1_000_000,
+            session_id: Some("s1".into()),
+            hostname: Some("host".into()),
+            timestamp: 1_000_000,
         };
         assert_eq!(e.id, "abc");
         assert_eq!(e.command, "git push");
@@ -43,14 +43,14 @@ mod tests {
     #[test]
     fn test_entry_clone() {
         let e = Entry {
-            id:          "x".into(),
-            command:     "ls".into(),
-            cwd:         None,
-            exit_code:   Some(0),
+            id: "x".into(),
+            command: "ls".into(),
+            cwd: None,
+            exit_code: Some(0),
             duration_ms: None,
-            session_id:  None,
-            hostname:    None,
-            timestamp:   0,
+            session_id: None,
+            hostname: None,
+            timestamp: 0,
         };
         let c = e.clone();
         assert_eq!(c.id, e.id);
@@ -60,14 +60,14 @@ mod tests {
     #[test]
     fn test_entry_serde_roundtrip() {
         let e = Entry {
-            id:          "xyz".into(),
-            command:     "cargo build".into(),
-            cwd:         None,
-            exit_code:   Some(1),
+            id: "xyz".into(),
+            command: "cargo build".into(),
+            cwd: None,
+            exit_code: Some(1),
             duration_ms: None,
-            session_id:  None,
-            hostname:    None,
-            timestamp:   2_000_000,
+            session_id: None,
+            hostname: None,
+            timestamp: 2_000_000,
         };
         let json = serde_json::to_string(&e).unwrap();
         let de: Entry = serde_json::from_str(&json).unwrap();
@@ -84,14 +84,14 @@ mod tests {
     #[test]
     fn test_entry_serde_all_none() {
         let e = Entry {
-            id:          "".into(),
-            command:     "".into(),
-            cwd:         None,
-            exit_code:   None,
+            id: "".into(),
+            command: "".into(),
+            cwd: None,
+            exit_code: None,
             duration_ms: None,
-            session_id:  None,
-            hostname:    None,
-            timestamp:   0,
+            session_id: None,
+            hostname: None,
+            timestamp: 0,
         };
         let json = serde_json::to_string(&e).unwrap();
         let de: Entry = serde_json::from_str(&json).unwrap();
@@ -102,14 +102,14 @@ mod tests {
     #[test]
     fn test_entry_failed_exit_code() {
         let e = Entry {
-            id:          "f1".into(),
-            command:     "cargo test".into(),
-            cwd:         None,
-            exit_code:   Some(101),
+            id: "f1".into(),
+            command: "cargo test".into(),
+            cwd: None,
+            exit_code: Some(101),
             duration_ms: Some(5_000),
-            session_id:  None,
-            hostname:    None,
-            timestamp:   999,
+            session_id: None,
+            hostname: None,
+            timestamp: 999,
         };
         assert_eq!(e.exit_code, Some(101));
         assert!(e.exit_code.map(|c| c != 0).unwrap_or(false));

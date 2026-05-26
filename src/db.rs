@@ -1,6 +1,6 @@
-use anyhow::{Context, Result};
-use rusqlite::{Connection, params};
 use crate::models::Entry;
+use anyhow::{Context, Result};
+use rusqlite::{params, Connection};
 
 /// Open or create the SQLite history database, applying migrations.
 ///
@@ -13,7 +13,8 @@ pub fn open() -> Result<Connection> {
         .join("shel")
         .join("history.db");
 
-    let parent = path.parent()
+    let parent = path
+        .parent()
         .with_context(|| format!("invalid db path, no parent dir: {}", path.display()))?;
     std::fs::create_dir_all(parent)
         .with_context(|| format!("failed to create db dir: {}", parent.display()))?;
@@ -62,8 +63,14 @@ pub fn insert(conn: &Connection, e: &Entry) -> Result<()> {
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
     )?;
     stmt.execute(params![
-        e.id, e.command, e.cwd, e.exit_code,
-        e.duration_ms, e.session_id, e.hostname, e.timestamp,
+        e.id,
+        e.command,
+        e.cwd,
+        e.exit_code,
+        e.duration_ms,
+        e.session_id,
+        e.hostname,
+        e.timestamp,
     ])?;
     Ok(())
 }
@@ -72,10 +79,7 @@ pub fn insert(conn: &Connection, e: &Entry) -> Result<()> {
 /// for ASCII), ordered by most recent first.
 /// `%`, `_`, and `!` in the query are treated as literal characters.
 pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Entry>> {
-    let escaped = query
-        .replace('!', "!!")
-        .replace('%', "!%")
-        .replace('_', "!_");
+    let escaped = query.replace('!', "!!").replace('%', "!%").replace('_', "!_");
     let pattern = format!("%{escaped}%");
     let mut stmt = conn.prepare_cached(
         "SELECT id,command,cwd,exit_code,duration_ms,session_id,hostname,timestamp
@@ -85,8 +89,7 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Entry>
          LIMIT ?2",
     )?;
     let rows = stmt.query_map(params![pattern, limit as i64], row_to_entry)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(anyhow::Error::from)
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(anyhow::Error::from)
 }
 
 /// List the most recent history entries, ordered by timestamp descending.
@@ -97,8 +100,7 @@ pub fn list(conn: &Connection, limit: usize) -> Result<Vec<Entry>> {
          FROM history ORDER BY timestamp DESC LIMIT ?1",
     )?;
     let rows = stmt.query_map(params![limit as i64], row_to_entry)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(anyhow::Error::from)
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(anyhow::Error::from)
 }
 
 /// List every history entry without a row cap. Used by the TUI.
@@ -108,20 +110,19 @@ pub fn list_all(conn: &Connection) -> Result<Vec<Entry>> {
          FROM history ORDER BY timestamp DESC",
     )?;
     let rows = stmt.query_map([], row_to_entry)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(anyhow::Error::from)
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(anyhow::Error::from)
 }
 
 fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
     Ok(Entry {
-        id:          row.get(0)?,
-        command:     row.get(1)?,
-        cwd:         row.get(2)?,
-        exit_code:   row.get(3)?,
+        id: row.get(0)?,
+        command: row.get(1)?,
+        cwd: row.get(2)?,
+        exit_code: row.get(3)?,
         duration_ms: row.get(4)?,
-        session_id:  row.get(5)?,
-        hostname:    row.get(6)?,
-        timestamp:   row.get(7)?,
+        session_id: row.get(5)?,
+        hostname: row.get(6)?,
+        timestamp: row.get(7)?,
     })
 }
 
@@ -163,9 +164,9 @@ mod tests {
     #[test]
     fn test_list_ordered_by_timestamp_desc() {
         let conn = test_conn();
-        insert(&conn, &sample_entry("a", "first",  100)).unwrap();
+        insert(&conn, &sample_entry("a", "first", 100)).unwrap();
         insert(&conn, &sample_entry("b", "second", 200)).unwrap();
-        insert(&conn, &sample_entry("c", "third",  150)).unwrap();
+        insert(&conn, &sample_entry("c", "third", 150)).unwrap();
 
         let entries = list(&conn, 10).unwrap();
         assert_eq!(entries[0].id, "b");
@@ -203,8 +204,8 @@ mod tests {
     #[test]
     fn test_search_finds_matching() {
         let conn = test_conn();
-        insert(&conn, &sample_entry("a", "git push",      100)).unwrap();
-        insert(&conn, &sample_entry("b", "cargo build",   200)).unwrap();
+        insert(&conn, &sample_entry("a", "git push", 100)).unwrap();
+        insert(&conn, &sample_entry("b", "cargo build", 200)).unwrap();
         insert(&conn, &sample_entry("c", "git commit -m", 150)).unwrap();
 
         let entries = search(&conn, "git", 10).unwrap();
@@ -217,7 +218,7 @@ mod tests {
     fn test_search_case_insensitive() {
         let conn = test_conn();
         insert(&conn, &sample_entry("a", "GIT PUSH", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "npm run",  200)).unwrap();
+        insert(&conn, &sample_entry("b", "npm run", 200)).unwrap();
 
         let entries = search(&conn, "git", 10).unwrap();
         assert_eq!(entries.len(), 1);
@@ -235,7 +236,7 @@ mod tests {
     #[test]
     fn test_insert_duplicate_id_ignored() {
         let conn = test_conn();
-        let e1 = sample_entry("dup", "first",  100);
+        let e1 = sample_entry("dup", "first", 100);
         let e2 = sample_entry("dup", "second", 200);
         insert(&conn, &e1).unwrap();
         insert(&conn, &e2).unwrap();
@@ -248,9 +249,9 @@ mod tests {
     #[test]
     fn test_search_ordered_by_timestamp_desc() {
         let conn = test_conn();
-        insert(&conn, &sample_entry("a", "git push",   100)).unwrap();
+        insert(&conn, &sample_entry("a", "git push", 100)).unwrap();
         insert(&conn, &sample_entry("b", "git commit", 300)).unwrap();
-        insert(&conn, &sample_entry("c", "git log",    200)).unwrap();
+        insert(&conn, &sample_entry("c", "git log", 200)).unwrap();
 
         let entries = search(&conn, "git", 10).unwrap();
         assert_eq!(entries.len(), 3);
@@ -263,7 +264,7 @@ mod tests {
     fn test_search_literal_percent() {
         let conn = test_conn();
         insert(&conn, &sample_entry("a", "find . -name '%.rs'", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "npm install",         200)).unwrap();
+        insert(&conn, &sample_entry("b", "npm install", 200)).unwrap();
 
         let entries = search(&conn, "%.rs", 10).unwrap();
         assert_eq!(entries.len(), 1);
@@ -274,7 +275,7 @@ mod tests {
     fn test_search_literal_underscore() {
         let conn = test_conn();
         insert(&conn, &sample_entry("a", "git checkout _main", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "git checkout main",  200)).unwrap();
+        insert(&conn, &sample_entry("b", "git checkout main", 200)).unwrap();
 
         let entries = search(&conn, "_main", 10).unwrap();
         assert_eq!(entries.len(), 1);
@@ -285,7 +286,7 @@ mod tests {
     fn test_search_literal_exclamation() {
         let conn = test_conn();
         insert(&conn, &sample_entry("a", "echo 'hello!'", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "echo 'hello'",  200)).unwrap();
+        insert(&conn, &sample_entry("b", "echo 'hello'", 200)).unwrap();
 
         let entries = search(&conn, "hello!", 10).unwrap();
         assert_eq!(entries.len(), 1);
