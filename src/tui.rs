@@ -236,7 +236,7 @@ fn render(f: &mut ratatui::Frame, app: &mut App) -> std::io::Result<()> {
         .collect();
 
     let list = List::new(items);
-    let mut state = app.list_state.clone();
+    let mut state = app.list_state;
     f.render_stateful_widget(list, chunks[1], &mut state);
 
     Ok(())
