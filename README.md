@@ -1,109 +1,121 @@
 # shel
 
-Shell history manager with a fuzzy-search TUI picker — a modern `Ctrl-R` replacement.
+> Shell history that actually remembers. A `Ctrl-R` replacement backed by SQLite.
 
-Records every command to SQLite with exit code, duration, working directory, and hostname. The interactive TUI lets you search, pick, and re-run commands instantly.
+`shel` records every command you run — exit code, duration, working directory, hostname — and gives you a fast fuzzy TUI to search and re-run them. Drop it into bash, zsh, or fish in 30 seconds.
 
-## Features
+---
 
-- **Drop-in Ctrl-R replacement** — hooks for bash, zsh, and fish
-- **Fast incremental search** — type to filter, arrows to navigate, Enter to select
-- **Rich metadata** — exit code, duration, cwd, hostname, timestamp per command
-- **SQLite-backed** — WAL mode for concurrent writers, no lock contention
-- **CLI interface** — `shel search`, `shel record`, `shel init` for scripting
+## Install
 
-## Installation
+### Linux packages
 
-### Linux (deb/rpm)
-
-Download the `.deb` or `.rpm` from the [latest release](https://github.com/Lordsofzzzz/shel/releases/latest).
+Download `.deb` or `.rpm` from the [latest release](https://github.com/Lordsofzzzz/shel/releases/latest).
 
 ```bash
-# Debian/Ubuntu
+# Debian / Ubuntu
 sudo dpkg -i shel_*.deb
 
-# Fedora/RHEL
+# Fedora / RHEL / openSUSE
 sudo rpm -i shel_*.rpm
 ```
+
+Packages are available for **x86_64** and **aarch64**.
 
 ### From source
 
 ```bash
-cargo install shel
+cargo install --git https://github.com/Lordsofzzzz/shel
 ```
 
 Requires Rust 1.81+.
 
-## Shell Setup
+---
 
-Run the `init` command for your shell and add the output to your shell rc file.
+## Setup
 
-**Bash** (`~/.bashrc`):
+Run once, add to your shell rc:
 
 ```bash
+# Bash  (~/.bashrc)
 eval "$(shel init bash)"
-```
 
-**Zsh** (`~/.zshrc`):
-
-```zsh
+# Zsh   (~/.zshrc)
 eval "$(shel init zsh)"
-```
 
-**Fish** (`~/.config/fish/config.fish`):
-
-```fish
+# Fish  (~/.config/fish/config.fish)
 shel init fish | source
 ```
 
-After sourcing the hook, `Ctrl-R` opens the TUI picker and running commands is automatically recorded.
+That's it. `Ctrl-R` now opens the TUI. Every command you run is recorded automatically in the background.
 
-## Usage
+---
+
+## TUI
 
 ```
-Usage: shel <COMMAND>
+  42 results
+  > git
 
-Commands:
-  record   Record a command into history (called by shell hooks)
-  search   Search history and print results to stdout
-  ui       Open the interactive TUI picker
-  init     Print the shell hook for the given shell (bash, zsh, fish)
-  help     Print help
+▶ ✓   1.2s  git push origin main
+  ✓    43ms  git commit -m "fix: clippy warning"
+  ✓    12ms  git log --oneline -10
+  ✗1   8.4s  git rebase -i HEAD~5
 ```
-
-### Examples
-
-```bash
-# Search history from the CLI
-shel search "git push"
-shel search "cargo" --json
-
-# Search with a pre-filled query in the TUI
-shel ui "docker"
-
-# Record a command manually
-shel record "curl example.com" --exit-code 0 --duration-ms 250
-```
-
-## TUI Keybindings
 
 | Key | Action |
 |---|---|
-| `Ctrl-R`, `Enter` | Select and return command |
-| `Esc`, `Ctrl-C`, `Ctrl-G` | Cancel |
-| `↑` / `↓` | Navigate list |
-| `Ctrl-P` / `Ctrl-N` | Navigate list (vim-style) |
+| Type | Filter results |
+| `↑` / `↓` or `Ctrl-P` / `Ctrl-N` | Navigate |
 | `Tab` / `Shift-Tab` | Next / previous |
-| `Backspace` | Delete character |
-| `Ctrl-U` | Clear query |
+| `Enter` | Select and inject into prompt |
 | `Ctrl-W` | Delete last word |
+| `Ctrl-U` | Clear query |
+| `Esc` / `Ctrl-C` | Cancel |
 
-## How It Works
+---
 
-`shel` uses `PROMPT_COMMAND` / `preexec` hooks to record each command **after** it finishes (so exit code and duration are known). The `record` subcommand runs in a background subshell to avoid slowing down your prompt.
+## CLI
 
-The TUI uses [ratatui](https://ratatui.rs) with an inline viewport overlay — it doesn't take over the full terminal.
+```bash
+# Search and print to stdout
+shel search "git push"
+shel search "cargo" --limit 20
+shel search "docker" --json
+
+# Open TUI with a pre-filled query
+shel ui "kubectl"
+
+# Record a command manually
+shel record "make build" --exit-code 0 --duration-ms 4200
+
+# Print the shell hook (for manual inspection)
+shel init bash
+```
+
+---
+
+## How it works
+
+Shell hooks use `PROMPT_COMMAND` / `preexec` to capture each command *after* it finishes — so exit code and duration are always available. `shel record` runs in a background subshell so it never slows down your prompt.
+
+History is stored in `~/.local/share/shel/history.db` (SQLite, WAL mode). Multiple terminal sessions write concurrently without lock contention.
+
+The TUI uses [ratatui](https://ratatui.rs) with an **inline viewport** — it renders a small overlay below the current prompt line, not a full-screen takeover.
+
+---
+
+## Features
+
+- Fuzzy search across full command history
+- Exit code and duration visible at a glance (`✓` / `✗`)
+- Per-command metadata: cwd, hostname, session ID, timestamp
+- Works across multiple concurrent terminal sessions
+- JSON output for scripting (`--json`)
+- No daemon, no background process, no config file required
+
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
