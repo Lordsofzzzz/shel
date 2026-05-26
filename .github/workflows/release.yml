@@ -9,25 +9,33 @@ permissions:
   contents: write
 
 jobs:
-  release-linux:
-    name: Release (Linux x86_64)
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
+        with:
+          key: ${{ matrix.target }}
 
       - name: Install packaging tools
-        run: |
+        uses: cargo-bins/cargo-binstall@main
+      - run: |
           cargo binstall --no-confirm cargo-deb
           cargo binstall --no-confirm cargo-generate-rpm
 
-      - name: Build release binary
+      - name: Build
         run: cargo build --release --locked
 
       - name: Package .deb
@@ -37,42 +45,30 @@ jobs:
         run: cargo generate-rpm
 
       - name: Upload artifacts
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: packages-${{ matrix.target }}
+          path: |
             target/debian/*.deb
             target/generate-rpm/*.rpm
-          generate_release_notes: true
 
-  release-macos:
-    name: Release (macOS ${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/download-artifact@v4
         with:
-          target: ${{ matrix.target }}
+          pattern: packages-*
+          merge-multiple: true
+          path: dist/
 
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Build release binary
-        run: cargo build --release --locked --target ${{ matrix.target }}
-
-      - name: Package tarball
+      - name: Checksums
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf "shel-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" shel
+          cd dist
+          sha256sum * > sha256sums.txt
 
-      - name: Upload artifacts
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          files: target/${{ matrix.target }}/release/shel-*.tar.gz
+          files: dist/*
           generate_release_notes: true
