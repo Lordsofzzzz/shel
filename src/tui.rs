@@ -1,7 +1,9 @@
 use anyhow::Result;
+use ratatui::crossterm::cursor::MoveTo;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use ratatui::crossterm::execute;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Position},
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph},
@@ -11,7 +13,6 @@ use rusqlite::Connection;
 
 use crate::db;
 use crate::models::Entry;
-
 
 const POPUP_HEIGHT: u16 = 14;
 struct App {
@@ -87,15 +88,24 @@ pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<Stri
     let entries = db::list_all(conn)?;
     let mut app = App::new(entries, initial_query.unwrap_or(""));
 
+    // Save cursor position before init so we can restore it on exit.
+    // After Viewport::Inline init, ratatui may scroll the terminal and shift
+    // the viewport origin upward — making area.y == 0 even if cursor wasn't
+    // at the top. Saving here (cooked mode) gives the real screen position.
+    let saved = ratatui::crossterm::cursor::position().ok();
+
     let mut terminal =
         ratatui::init_with_options(TerminalOptions { viewport: Viewport::Inline(POPUP_HEIGHT) });
 
     let result = run_loop(&mut terminal, &mut app);
 
-    // terminal.clear() in ratatui-core 0.1.2+ saves cursor, moves to viewport origin,
-    // clears from there to end-of-screen, then restores cursor. No alt-screen.
     let _ = terminal.clear();
-    let _ = ratatui::crossterm::terminal::disable_raw_mode();
+    ratatui::restore();
+
+    // Restore cursor to where it was before the TUI opened (not the viewport origin).
+    if let Some((x, y)) = saved {
+        let _ = execute!(std::io::stdout(), MoveTo(x, y));
+    }
 
     result
 }
@@ -235,15 +245,11 @@ fn render(f: &mut ratatui::Frame, app: &mut App) -> std::io::Result<()> {
     let list = List::new(items);
     let mut state = app.list_state;
     f.render_stateful_widget(list, chunks[1], &mut state);
-    app.list_state = state;  // preserve scroll offset
+    app.list_state = state; // preserve scroll offset
 
     if app.done {
-        // area.y is the viewport's absolute top row (ratatui-corrected for
-        // any init-time scroll). Put cursor there so Clear(FromCursorDown)
-        // in run() can wipe the popup.
-        f.set_cursor_position(Position::new(0, area.y));
+        return Ok(());
     }
-
     Ok(())
 }
 
