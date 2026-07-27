@@ -1,7 +1,5 @@
 use anyhow::Result;
-use ratatui::crossterm::cursor::MoveTo;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use ratatui::crossterm::execute;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -117,23 +115,19 @@ pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<Sele
     // on exit. After Viewport::Inline init, ratatui may scroll the terminal
     // and shift the viewport origin — the saved position is where the shell
     // prompt was, which is where we want to return.
-    let saved = ratatui::crossterm::cursor::position().ok();
-
     let mut terminal =
         ratatui::init_with_options(TerminalOptions { viewport: Viewport::Inline(POPUP_HEIGHT) });
 
     let result = run_loop(&mut terminal, &mut app);
 
-    // Clear inline viewport (clears from viewport origin to end-of-screen).
-    // Then disable raw mode — don't use ratatui::restore() here because it
-    // sends LeaveAlternateScreen (\x1b[?1049l) which we never entered.
+    // Clear inline viewport content, then move cursor to the viewport origin
+    // (right below preserved terminal content).  ratatui-core v0.1.1 changed
+    // Terminal::clear() to preserve cursor position instead of moving it to the
+    // viewport origin, so we do that manually here.
     let _ = terminal.clear();
+    let origin = terminal.get_frame().area().as_position();
+    let _ = terminal.set_cursor_position(origin);
     let _ = ratatui::crossterm::terminal::disable_raw_mode();
-
-    // Restore cursor to where it was before the TUI opened.
-    if let Some((x, y)) = saved {
-        let _ = execute!(std::io::stdout(), MoveTo(x, y));
-    }
 
     result
 }
