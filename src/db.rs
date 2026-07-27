@@ -113,6 +113,21 @@ pub fn list_all(conn: &Connection) -> Result<Vec<Entry>> {
     rows.collect::<rusqlite::Result<Vec<_>>>().map_err(anyhow::Error::from)
 }
 
+/// List unique commands (most recent occurrence of each), ordered by recency.
+/// If the same command ran 50 times, only the latest row survives.
+pub fn list_all_unique(conn: &Connection) -> Result<Vec<Entry>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT id,command,cwd,exit_code,duration_ms,session_id,hostname,timestamp
+         FROM history
+         WHERE rowid IN (
+             SELECT MAX(rowid) FROM history GROUP BY command
+         )
+         ORDER BY timestamp DESC",
+    )?;
+    let rows = stmt.query_map([], row_to_entry)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(anyhow::Error::from)
+}
+
 fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
     Ok(Entry {
         id: row.get(0)?,

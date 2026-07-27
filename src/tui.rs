@@ -85,7 +85,7 @@ impl App {
 /// the terminal before printing the panic message — prevents a bricked terminal
 /// if anything inside the event loop panics.
 pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<String>> {
-    let entries = db::list_all(conn)?;
+    let entries = db::list_all_unique(conn)?;
     let mut app = App::new(entries, initial_query.unwrap_or(""));
 
     // Save cursor position before init (cooked mode) so we can restore it
