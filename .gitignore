@@ -1,1 +1,23 @@
 /target
+
+# macOS
+.DS_Store
+
+# Editor temp files
+*.swp
+*.swo
+*~
+*.orig
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Environment / secrets
+.env
+.env.local
+
+# Python cache (used in scripts/hooks)
+__pycache__/
+*.pyc
