@@ -21,11 +21,21 @@ function __shel_on_postexec --on-event fish_postexec
 end
 
 function __shel_ctrl_r
-    set -l selected (shel ui (commandline) 2>/dev/null)
+    set -l selected (shel ui (commandline) 3>&1 1>&2 2>&3)
+    set -l exit_code $status
     if test -n "$selected"
-        commandline -- $selected
+        if test $exit_code -eq 0
+            # Tab — populate buffer for editing
+            commandline -- $selected
+            commandline -f repaint
+        else
+            # Enter — execute directly
+            commandline -- $selected
+            commandline -f execute
+        end
+    else
+        commandline -f repaint
     end
-    commandline -f repaint
 end
 
 bind \cr __shel_ctrl_r

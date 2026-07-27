@@ -14,6 +14,18 @@ use rusqlite::Connection;
 use crate::db;
 use crate::models::Entry;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Populate,
+    Execute,
+}
+
+/// The result of a completed TUI interaction.
+pub struct Selection {
+    pub command: String,
+    pub action: Action,
+}
+
 const POPUP_HEIGHT: u16 = 14;
 struct App {
     query: String,
@@ -22,6 +34,7 @@ struct App {
     list_state: ListState,
     selected: Option<String>,
     done: bool,
+    action: Option<Action>,
 }
 
 impl App {
@@ -33,6 +46,7 @@ impl App {
             list_state: ListState::default(),
             selected: None,
             done: false,
+            action: None,
         };
         app.filter();
         app
@@ -74,6 +88,17 @@ impl App {
                 self.selected = Some(self.entries[ei].command.clone());
             }
         }
+        self.action = Some(Action::Execute);
+        self.done = true;
+    }
+
+    fn populate(&mut self) {
+        if let Some(idx) = self.list_state.selected() {
+            if let Some(&ei) = self.filtered.get(idx) {
+                self.selected = Some(self.entries[ei].command.clone());
+            }
+        }
+        self.action = Some(Action::Populate);
         self.done = true;
     }
 }
@@ -84,7 +109,7 @@ impl App {
 /// Uses `ratatui::init_with_options` which installs a panic hook that restores
 /// the terminal before printing the panic message — prevents a bricked terminal
 /// if anything inside the event loop panics.
-pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<String>> {
+pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<Selection>> {
     let entries = db::list_all_unique(conn)?;
     let mut app = App::new(entries, initial_query.unwrap_or(""));
 
@@ -113,7 +138,7 @@ pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<Stri
     result
 }
 
-fn run_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<Option<String>> {
+fn run_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<Option<Selection>> {
     loop {
         terminal.try_draw(|f| render(f, app))?;
 
@@ -134,9 +159,9 @@ fn run_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<Op
 
                 (_, KeyCode::Up) | (KeyModifiers::CONTROL, KeyCode::Char('p')) => app.up(),
 
-                (_, KeyCode::Down)
-                | (KeyModifiers::CONTROL, KeyCode::Char('n'))
-                | (_, KeyCode::Tab) => app.down(),
+                (_, KeyCode::Down) | (KeyModifiers::CONTROL, KeyCode::Char('n')) => app.down(),
+
+                (_, KeyCode::Tab) => app.populate(),
 
                 (_, KeyCode::BackTab) => app.up(),
 
@@ -167,7 +192,10 @@ fn run_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<Op
         }
     }
 
-    Ok(app.selected.take())
+    Ok(app.selected.take().map(|cmd| Selection {
+        command: cmd,
+        action: app.action.take().unwrap_or(Action::Execute),
+    }))
 }
 
 fn fmt_dur(ms: i64) -> String {
@@ -408,5 +436,32 @@ mod tests {
         assert_eq!(fmt_dur(60_000), "1m");
         assert_eq!(fmt_dur(120_000), "2m");
         assert_eq!(fmt_dur(3_600_000), "60m");
+    }
+
+    #[test]
+    fn test_confirm_sets_execute_action() {
+        let entries = vec![make_entry("a", "git push", 1)];
+        let mut app = App::new(entries, "");
+        app.confirm();
+        assert_eq!(app.action, Some(Action::Execute));
+    }
+
+    #[test]
+    fn test_populate_sets_populate_action() {
+        let entries = vec![make_entry("a", "git push", 1)];
+        let mut app = App::new(entries, "");
+        app.populate();
+        assert_eq!(app.action, Some(Action::Populate));
+    }
+
+    #[test]
+    fn test_populate_selects_command() {
+        let entries = vec![make_entry("a", "git push", 1), make_entry("b", "cargo", 2)];
+        let mut app = App::new(entries, "");
+        app.down();
+        app.populate();
+        assert_eq!(app.selected.as_deref(), Some("cargo"));
+        assert_eq!(app.action, Some(Action::Populate));
+        assert!(app.done);
     }
 }

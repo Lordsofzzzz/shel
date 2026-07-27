@@ -100,10 +100,14 @@ fn main() -> Result<()> {
         }
 
         Cmd::Ui { query } => {
-            if let Some(cmd) = tui::run(&conn, query.as_deref())? {
+            if let Some(sel) = tui::run(&conn, query.as_deref())? {
                 // Written to stderr intentionally — shell hooks swap fds to
                 // capture this into the readline/zle buffer.
-                eprint!("{cmd}");
+                eprint!("{}", sel.command);
+                match sel.action {
+                    tui::Action::Populate => std::process::exit(0),
+                    tui::Action::Execute => std::process::exit(1),
+                }
             }
         }
 

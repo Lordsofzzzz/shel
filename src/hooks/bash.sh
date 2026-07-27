@@ -25,9 +25,17 @@ __shel_precmd() {
 __shel_ctrl_r() {
     local selected
     selected=$(shel ui "$READLINE_LINE" 3>&1 1>&2 2>&3)
+    local exit_code=$?
     if [[ -n "$selected" ]]; then
-        READLINE_LINE="$selected"
-        READLINE_POINT=${#READLINE_LINE}
+        if [[ $exit_code -eq 0 ]]; then
+            # Tab — populate buffer for editing
+            READLINE_LINE="$selected"
+            READLINE_POINT=${#READLINE_LINE}
+        else
+            # Enter — execute directly
+            READLINE_LINE=""
+            eval "$selected"
+        fi
     fi
 }
 

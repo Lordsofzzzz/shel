@@ -25,10 +25,17 @@ __shel_ctrl_r() {
     zle -I
     local selected
     selected=$(shel ui "$BUFFER" 3>&1 1>&2 2>&3)
-    zle reset-prompt
+    local exit_code=$?
     [[ -z "$selected" ]] && return
     BUFFER="$selected"
     CURSOR=${#BUFFER}
+    if [[ $exit_code -ne 0 ]]; then
+        # Enter — execute directly
+        zle accept-line
+    else
+        # Tab — leave buffer for editing
+        zle reset-prompt
+    fi
 }
 
 autoload -Uz add-zsh-hook
