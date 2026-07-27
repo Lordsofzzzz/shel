@@ -14,7 +14,6 @@ use rusqlite::Connection;
 use crate::db;
 use crate::models::Entry;
 
-
 const POPUP_HEIGHT: u16 = 14;
 struct App {
     query: String,
@@ -249,7 +248,7 @@ fn render(f: &mut ratatui::Frame, app: &mut App) -> std::io::Result<()> {
     let list = List::new(items);
     let mut state = app.list_state;
     f.render_stateful_widget(list, chunks[1], &mut state);
-    app.list_state = state;  // preserve scroll offset
+    app.list_state = state; // preserve scroll offset
 
     Ok(())
 }
