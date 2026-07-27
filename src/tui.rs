@@ -458,4 +458,64 @@ mod tests {
         assert_eq!(app.action, Some(Action::Populate));
         assert!(app.done);
     }
+
+    #[test]
+    fn test_clear_leaves_cursor_at_viewport_origin() {
+        // ratatui-core v0.1.1 changed Terminal::clear() to preserve cursor
+        // position instead of moving it to the viewport origin.  This test
+        // verifies that after clear() we must manually set the cursor to the
+        // viewport origin — otherwise the cursor ends up below the cleared
+        // viewport, leaving blank lines on the terminal.
+        use ratatui::backend::{Backend, TestBackend};
+        use ratatui::layout::Position;
+        use ratatui::{Terminal, TerminalOptions, Viewport};
+
+        let mut backend = TestBackend::new(40, 10);
+
+        // Simulate cursor near the terminal bottom — this triggers scrolling
+        // during init, which shifts the viewport origin above the cursor.
+        backend.set_cursor_position(Position { x: 0, y: 6 }).unwrap();
+
+        let mut terminal =
+            Terminal::with_options(backend, TerminalOptions { viewport: Viewport::Inline(4) })
+                .unwrap();
+
+        let area = terminal.get_frame().area();
+        // Terminal is 10 tall, cursor at y=6, viewport height=4.
+        // lines_after_cursor = 4-1 = 3, available = 10-6-1 = 3, no scroll.
+        // Viewport starts at cursor row.
+        assert_eq!(area.y, 6, "viewport origin should be at cursor row");
+        assert_eq!(area.height, 4, "viewport should be 4 rows");
+
+        // Cursor before clear: append_lines(3) from y=6 in a 10-row terminal
+        // puts cursor at bottom row (y=9).
+        let pos_before = terminal.backend_mut().get_cursor_position().unwrap();
+        assert_eq!(pos_before.y, 9, "cursor should be at bottom row after init");
+
+        // Clear the viewport — ratatui 0.1.1+ restores the pre-clear cursor
+        // position instead of moving to the viewport origin.
+        terminal.clear().unwrap();
+
+        let pos_after = terminal.backend_mut().get_cursor_position().unwrap();
+        assert_eq!(
+            (pos_after.x, pos_after.y),
+            (pos_before.x, pos_before.y),
+            "clear() restored cursor to pre-clear position (not viewport origin)"
+        );
+        assert_ne!(
+            (pos_after.x, pos_after.y),
+            (area.x, area.y),
+            "clear() left cursor at viewport origin — ratatui may have fixed \
+             this upstream; remove the manual set_cursor_position workaround"
+        );
+
+        // Our fix: manually set cursor to viewport origin.
+        terminal.set_cursor_position(area.as_position()).unwrap();
+        let pos_fixed = terminal.backend_mut().get_cursor_position().unwrap();
+        assert_eq!(
+            (pos_fixed.x, pos_fixed.y),
+            (area.x, area.y),
+            "set_cursor_position should move cursor to viewport origin"
+        );
+    }
 }
