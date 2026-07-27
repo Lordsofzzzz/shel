@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Position},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph},
@@ -12,8 +12,8 @@ use rusqlite::Connection;
 use crate::db;
 use crate::models::Entry;
 
-const POPUP_HEIGHT: u16 = 14;
 
+const POPUP_HEIGHT: u16 = 14;
 struct App {
     query: String,
     entries: Vec<Entry>,
@@ -84,23 +84,21 @@ impl App {
 /// the terminal before printing the panic message — prevents a bricked terminal
 /// if anything inside the event loop panics.
 pub fn run(conn: &Connection, initial_query: Option<&str>) -> Result<Option<String>> {
-    // Load all history — no artificial cap.
     let entries = db::list_all(conn)?;
     let mut app = App::new(entries, initial_query.unwrap_or(""));
 
-    // init_with_options: enables raw mode + installs panic hook for safe restore.
     let mut terminal =
         ratatui::init_with_options(TerminalOptions { viewport: Viewport::Inline(POPUP_HEIGHT) });
 
     let result = run_loop(&mut terminal, &mut app);
 
-    // restore: disables raw mode; prints errors to stderr instead of propagating
-    // so cleanup always runs regardless of prior errors.
-    ratatui::restore();
+    // terminal.clear() in ratatui-core 0.1.2+ saves cursor, moves to viewport origin,
+    // clears from there to end-of-screen, then restores cursor. No alt-screen.
+    let _ = terminal.clear();
+    let _ = ratatui::crossterm::terminal::disable_raw_mode();
 
     result
 }
-
 fn run_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<Option<String>> {
     loop {
         // try_draw propagates render errors instead of panicking.
@@ -170,7 +168,6 @@ fn fmt_dur(ms: i64) -> String {
 }
 
 fn render(f: &mut ratatui::Frame, app: &mut App) -> std::io::Result<()> {
-    // f.area() — f.size() is deprecated since ratatui 0.26.
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -238,6 +235,14 @@ fn render(f: &mut ratatui::Frame, app: &mut App) -> std::io::Result<()> {
     let list = List::new(items);
     let mut state = app.list_state;
     f.render_stateful_widget(list, chunks[1], &mut state);
+    app.list_state = state;  // preserve scroll offset
+
+    if app.done {
+        // area.y is the viewport's absolute top row (ratatui-corrected for
+        // any init-time scroll). Put cursor there so Clear(FromCursorDown)
+        // in run() can wipe the popup.
+        f.set_cursor_position(Position::new(0, area.y));
+    }
 
     Ok(())
 }
