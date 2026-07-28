@@ -75,23 +75,6 @@ pub fn insert(conn: &Connection, e: &Entry) -> Result<()> {
     Ok(())
 }
 
-/// Search history for commands matching `query` (substring, case-insensitive
-/// for ASCII), ordered by most recent first.
-/// `%`, `_`, and `!` in the query are treated as literal characters.
-pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Entry>> {
-    let escaped = query.replace('!', "!!").replace('%', "!%").replace('_', "!_");
-    let pattern = format!("%{escaped}%");
-    let mut stmt = conn.prepare_cached(
-        "SELECT id,command,cwd,exit_code,duration_ms,session_id,hostname,timestamp
-         FROM history
-         WHERE command LIKE ?1 ESCAPE '!'
-         ORDER BY timestamp DESC
-         LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(params![pattern, limit as i64], row_to_entry)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(anyhow::Error::from)
-}
-
 /// List the most recent history entries, ordered by timestamp descending.
 /// Pass `usize::MAX` (or use `list_all`) to retrieve everything.
 pub fn list(conn: &Connection, limit: usize) -> Result<Vec<Entry>> {
@@ -217,38 +200,6 @@ mod tests {
     }
 
     #[test]
-    fn test_search_finds_matching() {
-        let conn = test_conn();
-        insert(&conn, &sample_entry("a", "git push", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "cargo build", 200)).unwrap();
-        insert(&conn, &sample_entry("c", "git commit -m", 150)).unwrap();
-
-        let entries = search(&conn, "git", 10).unwrap();
-        assert_eq!(entries.len(), 2);
-        assert!(entries.iter().any(|e| e.id == "a"));
-        assert!(entries.iter().any(|e| e.id == "c"));
-    }
-
-    #[test]
-    fn test_search_case_insensitive() {
-        let conn = test_conn();
-        insert(&conn, &sample_entry("a", "GIT PUSH", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "npm run", 200)).unwrap();
-
-        let entries = search(&conn, "git", 10).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, "a");
-    }
-
-    #[test]
-    fn test_search_no_match() {
-        let conn = test_conn();
-        insert(&conn, &sample_entry("a", "git push", 100)).unwrap();
-        let entries = search(&conn, "zzz", 10).unwrap();
-        assert!(entries.is_empty());
-    }
-
-    #[test]
     fn test_insert_duplicate_id_ignored() {
         let conn = test_conn();
         let e1 = sample_entry("dup", "first", 100);
@@ -259,64 +210,5 @@ mod tests {
         let entries = list(&conn, 10).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].command, "first");
-    }
-
-    #[test]
-    fn test_search_ordered_by_timestamp_desc() {
-        let conn = test_conn();
-        insert(&conn, &sample_entry("a", "git push", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "git commit", 300)).unwrap();
-        insert(&conn, &sample_entry("c", "git log", 200)).unwrap();
-
-        let entries = search(&conn, "git", 10).unwrap();
-        assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].id, "b");
-        assert_eq!(entries[1].id, "c");
-        assert_eq!(entries[2].id, "a");
-    }
-
-    #[test]
-    fn test_search_literal_percent() {
-        let conn = test_conn();
-        insert(&conn, &sample_entry("a", "find . -name '%.rs'", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "npm install", 200)).unwrap();
-
-        let entries = search(&conn, "%.rs", 10).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, "a");
-    }
-
-    #[test]
-    fn test_search_literal_underscore() {
-        let conn = test_conn();
-        insert(&conn, &sample_entry("a", "git checkout _main", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "git checkout main", 200)).unwrap();
-
-        let entries = search(&conn, "_main", 10).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, "a");
-    }
-
-    #[test]
-    fn test_search_literal_exclamation() {
-        let conn = test_conn();
-        insert(&conn, &sample_entry("a", "echo 'hello!'", 100)).unwrap();
-        insert(&conn, &sample_entry("b", "echo 'hello'", 200)).unwrap();
-
-        let entries = search(&conn, "hello!", 10).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, "a");
-    }
-
-    #[test]
-    fn test_search_failed_exit_code_entry() {
-        let conn = test_conn();
-        let mut e = sample_entry("a", "cargo test", 100);
-        e.exit_code = Some(1);
-        insert(&conn, &e).unwrap();
-
-        let results = search(&conn, "cargo", 10).unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].exit_code, Some(1));
     }
 }

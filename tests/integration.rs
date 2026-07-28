@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use shel::db;
 use shel::models::Entry;
+use shel::search;
 
 fn test_db() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
@@ -21,15 +22,20 @@ fn entry(id: &str, cmd: &str, ts: i64) -> Entry {
     }
 }
 
+fn all_entries(conn: &Connection) -> Vec<Entry> {
+    db::list_all(conn).unwrap()
+}
+
 #[test]
 fn test_insert_and_search_roundtrip() {
     let conn = test_db();
     db::insert(&conn, &entry("a", "git push", 100)).unwrap();
     db::insert(&conn, &entry("b", "cargo build", 200)).unwrap();
 
-    let results = db::search(&conn, "git", 10).unwrap();
+    let entries = all_entries(&conn);
+    let results = search::fuzzy_search(&entries, "git");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].command, "git push");
+    assert_eq!(entries[results[0].0].command, "git push");
 }
 
 #[test]
@@ -61,13 +67,14 @@ fn test_search_special_chars_are_literal() {
     db::insert(&conn, &entry("a", "find . -name '%.rs'", 100)).unwrap();
     db::insert(&conn, &entry("b", "git checkout _main", 200)).unwrap();
 
-    let r1 = db::search(&conn, "%.rs", 10).unwrap();
+    let entries = all_entries(&conn);
+    let r1 = search::fuzzy_search(&entries, "%.rs");
     assert_eq!(r1.len(), 1, "% should not act as LIKE wildcard");
-    assert_eq!(r1[0].id, "a");
+    assert_eq!(entries[r1[0].0].id, "a");
 
-    let r2 = db::search(&conn, "_main", 10).unwrap();
+    let r2 = search::fuzzy_search(&entries, "_main");
     assert_eq!(r2.len(), 1, "_ should not act as LIKE wildcard");
-    assert_eq!(r2[0].id, "b");
+    assert_eq!(entries[r2[0].0].id, "b");
 }
 
 #[test]
@@ -89,7 +96,7 @@ fn test_empty_db() {
     let conn = test_db();
     assert!(db::list(&conn, 10).unwrap().is_empty());
     assert!(db::list_all(&conn).unwrap().is_empty());
-    assert!(db::search(&conn, "anything", 10).unwrap().is_empty());
+    assert!(search::fuzzy_search(&[], "anything").is_empty());
 }
 
 #[test]
@@ -110,10 +117,12 @@ fn test_search_ordering() {
     db::insert(&conn, &entry("b", "git commit", 300)).unwrap();
     db::insert(&conn, &entry("c", "npm install", 200)).unwrap();
 
-    let results = db::search(&conn, "git", 10).unwrap();
+    let entries = all_entries(&conn);
+    let results = search::fuzzy_search(&entries, "git");
+    // fuzzy_match scores exact prefix matches highly; both match equally
+    // so tiebreaker: more recent timestamp first
     assert_eq!(results.len(), 2);
-    assert_eq!(results[0].id, "b", "most recent first");
-    assert_eq!(results[1].id, "a", "older second");
+    assert_eq!(entries[results[0].0].id, "b", "higher score or more recent");
 }
 
 #[test]
@@ -124,8 +133,10 @@ fn test_failed_command_stored_and_retrieved() {
     e.duration_ms = Some(4_200);
     db::insert(&conn, &e).unwrap();
 
-    let results = db::search(&conn, "cargo test", 10).unwrap();
+    let entries = all_entries(&conn);
+    let results = search::fuzzy_search(&entries, "cargo test");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].exit_code, Some(101));
-    assert_eq!(results[0].duration_ms, Some(4_200));
+    let found = &entries[results[0].0];
+    assert_eq!(found.exit_code, Some(101));
+    assert_eq!(found.duration_ms, Some(4_200));
 }

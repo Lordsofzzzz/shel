@@ -1,4 +1,5 @@
 use anyhow::Result;
+use nucleo::{Matcher, Utf32Str};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -28,8 +29,10 @@ const POPUP_HEIGHT: u16 = 14;
 struct App {
     query: String,
     entries: Vec<Entry>,
-    filtered: Vec<usize>,
+    commands_lower: Vec<String>,
+    filtered: Vec<(usize, u16)>,
     list_state: ListState,
+    matcher: Matcher,
     selected: Option<String>,
     done: bool,
     action: Option<Action>,
@@ -37,11 +40,14 @@ struct App {
 
 impl App {
     fn new(entries: Vec<Entry>, initial_query: &str) -> Self {
+        let commands_lower = entries.iter().map(|e| e.command.to_lowercase()).collect();
         let mut app = App {
             query: initial_query.to_string(),
             entries,
+            commands_lower,
             filtered: vec![],
             list_state: ListState::default(),
+            matcher: Matcher::default(),
             selected: None,
             done: false,
             action: None,
@@ -51,15 +57,39 @@ impl App {
     }
 
     fn filter(&mut self) {
-        let q = self.query.to_lowercase();
-        self.filtered = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.command.to_lowercase().contains(&q))
-            .map(|(i, _)| i)
-            .collect();
-        self.list_state.select(if self.filtered.is_empty() { None } else { Some(0) });
+        let needle_lower: Vec<u8> = self.query.to_lowercase().into_bytes();
+        let needle = Utf32Str::Ascii(&needle_lower);
+
+        if needle_lower.is_empty() {
+            self.filtered = (0..self.entries.len()).map(|i| (i, 0)).collect();
+            self.list_state.select(if self.filtered.is_empty() { None } else { Some(0) });
+            return;
+        }
+
+        let (filtered, selected) = {
+            let matcher = &mut self.matcher;
+            let entries = &self.entries;
+            let cmds = &self.commands_lower;
+
+            let mut results: Vec<(usize, u16)> = entries
+                .iter()
+                .enumerate()
+                .filter_map(|(i, _)| {
+                    let haystack = Utf32Str::Ascii(cmds[i].as_bytes());
+                    matcher.fuzzy_match(haystack, needle).map(|s| (i, s))
+                })
+                .collect();
+
+            results.sort_by(|a, b| {
+                b.1.cmp(&a.1).then_with(|| entries[b.0].timestamp.cmp(&entries[a.0].timestamp))
+            });
+
+            let sel = if results.is_empty() { None } else { Some(0) };
+            (results, sel)
+        };
+
+        self.filtered = filtered;
+        self.list_state.select(selected);
     }
 
     fn up(&mut self) {
@@ -82,7 +112,7 @@ impl App {
 
     fn confirm(&mut self) {
         if let Some(idx) = self.list_state.selected() {
-            if let Some(&ei) = self.filtered.get(idx) {
+            if let Some(&(ei, _)) = self.filtered.get(idx) {
                 self.selected = Some(self.entries[ei].command.clone());
             }
         }
@@ -92,7 +122,7 @@ impl App {
 
     fn populate(&mut self) {
         if let Some(idx) = self.list_state.selected() {
-            if let Some(&ei) = self.filtered.get(idx) {
+            if let Some(&(ei, _)) = self.filtered.get(idx) {
                 self.selected = Some(self.entries[ei].command.clone());
             }
         }
@@ -235,7 +265,7 @@ fn render(f: &mut ratatui::Frame, app: &mut App) -> std::io::Result<()> {
         .filtered
         .iter()
         .enumerate()
-        .map(|(list_idx, &ei)| {
+        .map(|(list_idx, &(ei, _))| {
             let e = &app.entries[ei];
             let is_sel = selected_idx == Some(list_idx);
 

@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Local, TimeZone};
 use clap::{Parser, Subcommand};
 use models::Entry;
-use shel::{db, models, tui};
+use shel::{db, models, search, tui};
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -85,17 +85,19 @@ fn main() -> Result<()> {
         }
 
         Cmd::Search { query, limit, json } => {
-            let entries = match query.as_deref() {
+            let entries = db::list_all(&conn)?;
+            let display: Vec<&Entry> = match query.as_deref() {
                 Some(q) if !q.is_empty() => {
-                    tracing::debug!(query = %q, "searching history");
-                    db::search(&conn, q, limit)?
+                    tracing::debug!(query = %q, "searching history (fuzzy)");
+                    let matched = search::fuzzy_search(&entries, q);
+                    matched.into_iter().take(limit).map(|(i, _)| &entries[i]).collect()
                 }
-                _ => db::list(&conn, limit)?,
+                _ => entries.iter().take(limit).collect(),
             };
             if json {
-                println!("{}", serde_json::to_string_pretty(&entries)?);
+                println!("{}", serde_json::to_string_pretty(&display)?);
             } else {
-                print_table(&entries);
+                print_table(&display);
             }
         }
 
@@ -119,7 +121,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn print_table(entries: &[Entry]) {
+fn print_table(entries: &[&Entry]) {
     for e in entries.iter().rev() {
         let ts = Local
             .timestamp_millis_opt(e.timestamp)
@@ -181,7 +183,8 @@ mod tests {
     #[test]
     fn test_print_table_format() {
         let entries = vec![entry("git push", Some(0), Some(300), 1_700_000_000_000)];
-        print_table(&entries);
+        let refs: Vec<&Entry> = entries.iter().collect();
+        print_table(&refs);
     }
 
     #[test]

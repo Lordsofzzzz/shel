@@ -23,6 +23,7 @@ gethostname        = "1.1.0"
 ratatui            = "0.30.0"
 tracing            = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+nucleo = "0.5"
 
 [profile.release]
 opt-level      = 3
