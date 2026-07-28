@@ -1,6 +1,6 @@
 [package]
 name        = "shel"
-version     = "0.1.0"
+version     = "0.1.1"
 edition     = "2021"
 description = "Shell history manager with fuzzy TUI search"
 license     = "MIT"
